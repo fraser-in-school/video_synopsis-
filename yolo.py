@@ -18,6 +18,7 @@ from PIL import Image, ImageFont, ImageDraw
 from yolo3.model import yolo_eval
 from yolo3.utils import letterbox_image
 
+
 class YOLO(object):
     def __init__(self):
         self.model_path = 'model_data/yolo.h5'

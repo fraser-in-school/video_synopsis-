@@ -18,6 +18,7 @@ from deep_sort.detection import Detection
 from deep_sort.tracker import Tracker
 from tools import generate_detections as gdet
 from deep_sort.detection import Detection as ddet
+from constant import *
 warnings.filterwarnings('ignore')
 
 def main(yolo):
@@ -29,22 +30,28 @@ def main(yolo):
     
    # deep_sort 
     model_filename = 'model_data/mars-small128.pb'
-    encoder = gdet.create_box_encoder(model_filename,batch_size=1)
+    encoder = gdet.create_box_encoder(model_filename, batch_size=1)
     
     metric = nn_matching.NearestNeighborDistanceMetric("cosine", max_cosine_distance, nn_budget)
     tracker = Tracker(metric)
 
     writeVideo_flag = True 
     
-    video_capture = cv2.VideoCapture(0)
+    video_capture = cv2.VideoCapture(VIDEO_PATH)
+
+    # 如果视频没有成功打开
+    if not video_capture.isOpened():
+        print("open false!")
 
     if writeVideo_flag:
     # Define the codec and create VideoWriter object
         w = int(video_capture.get(3))
         h = int(video_capture.get(4))
+        print(w, h)
         fourcc = cv2.VideoWriter_fourcc(*'MJPG')
-        out = cv2.VideoWriter('output.avi', fourcc, 15, (w, h))
-        list_file = open('detection.txt', 'w')
+        out = cv2.VideoWriter('./temp_file/output.avi', fourcc, 30, (w, h))
+        list_file = open('./temp_file/detection.txt', 'w')
+        tracking_file = open('./temp_file/tracking.txt', 'w')
         frame_index = -1 
         
     fps = 0.0
@@ -56,9 +63,11 @@ def main(yolo):
 
        # image = Image.fromarray(frame)
         image = Image.fromarray(frame[...,::-1]) #bgr to rgb
+
+        # boxs 为 yolo 检测出的目标
         boxs = yolo.detect_image(image)
        # print("box_num",len(boxs))
-        features = encoder(frame,boxs)
+        features = encoder(frame, boxs)
         
         # score to 1.0 here).
         detections = [Detection(bbox, 1.0, feature) for bbox, feature in zip(boxs, features)]
@@ -66,35 +75,56 @@ def main(yolo):
         # Run non-maxima suppression.
         boxes = np.array([d.tlwh for d in detections])
         scores = np.array([d.confidence for d in detections])
+        print(scores)
         indices = preprocessing.non_max_suppression(boxes, nms_max_overlap, scores)
         detections = [detections[i] for i in indices]
         
         # Call the tracker
         tracker.predict()
         tracker.update(detections)
-        
+
+        # 保存 trackerID
+        tracker_IDs = []
+
         for track in tracker.tracks:
             if not track.is_confirmed() or track.time_since_update > 1:
                 continue 
             bbox = track.to_tlbr()
+
+            # 白框为跟踪的对象， 数字为 trackerID
             cv2.rectangle(frame, (int(bbox[0]), int(bbox[1])), (int(bbox[2]), int(bbox[3])),(255,255,255), 2)
             cv2.putText(frame, str(track.track_id),(int(bbox[0]), int(bbox[1])),0, 5e-3 * 200, (0,255,0),2)
+            tracker_IDs.append(track.track_id)
 
-        for det in detections:
+        for det, id in zip(detections, tracker_IDs):
             bbox = det.to_tlbr()
+            # 蓝框为检测到的对象
             cv2.rectangle(frame,(int(bbox[0]), int(bbox[1])), (int(bbox[2]), int(bbox[3])),(255,0,0), 2)
-            
-        cv2.imshow('', frame)
+            cv2.putText(frame, str(id), (int(bbox[0]), int(bbox[1])), 0, 5e-3 * 200, (0, 0, 255), 2)
+
+        # cv2.imshow('', frame)
         
         if writeVideo_flag:
             # save a frame
             out.write(frame)
+
+            # 写入目标位置和帧号
             frame_index = frame_index + 1
-            list_file.write(str(frame_index)+' ')
+            list_file.write(str(frame_index) + ' @' + str(len(boxs)) + ' ')
             if len(boxs) != 0:
                 for i in range(0,len(boxs)):
-                    list_file.write(str(boxs[i][0]) + ' '+str(boxs[i][1]) + ' '+str(boxs[i][2]) + ' '+str(boxs[i][3]) + ' ')
+                    list_file.write('$' + str(boxs[i][0]) + ' '+str(boxs[i][1]) + ' '+str(boxs[i][2]) + ' '+str(boxs[i][3]) + ' ')
             list_file.write('\n')
+
+            # 写入tracking
+            tracking_file.write(str(frame_index) + ' @' + str(len(tracker.tracks)) + ' ')
+            for track in tracker.tracks:
+                if (not track.is_confirmed() or track.time_since_update > 1) and frame_index >= 2 :
+                    continue
+                bbox = track.to_tlbr()
+                tracking_file.write('$ ' + str(track.track_id) + ' ' + str(int(bbox[0])) + ' ' + str(int(bbox[1])) + ' ' + str(int(bbox[2])) + ' ' + str(int(bbox[3])) + ' ')
+
+            tracking_file.write('\n')
             
         fps  = ( fps + (1./(time.time()-t1)) ) / 2
         print("fps= %f"%(fps))
