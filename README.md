@@ -45,6 +45,6 @@ python demo
 运行 get_video.py 生成最后的视频
 
 联系方式：
-201250397@qq.com
-这是我的小号的 QQ 邮箱，可能会看到，也可能看不到
+zhanghao1903@qq.com
+
 
